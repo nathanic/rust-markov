@@ -1,7 +1,7 @@
 extern crate serialize;
 // extern crate time;
 
-use std::str;
+// use std::str;
 // use std::rand;
 use std::io::{File, BufferedReader};
 use std::collections::HashMap;
@@ -73,8 +73,7 @@ impl MarkovModel {
         };
     }
 
-    // can i attach this to my wordcounts type as a member?
-    pub fn inc_word_count(&mut self, key: &str) {
+    fn inc_sequence_frequency(&mut self, key: &str) {
         self.frequencies.insert_or_update_with(
             key.to_string(),
             1,
@@ -84,7 +83,7 @@ impl MarkovModel {
         self.total_occurences += 1;
     }
 
-    pub fn set_frequency(&mut self, key: &str, freq: uint) {
+    fn set_frequency(&mut self, key: &str, freq: uint) {
         match self.frequencies.find(&key.to_string()) {
             Some(old_freq) =>  {
                 self.total_occurences -= *old_freq;
@@ -107,24 +106,20 @@ impl MarkovModel {
             }
         };
 
+        let mut acc: String = "".to_string();
         loop {
-            match srcreader.fill_buf() {
-                Ok(buf) => {
-                    if buf.len() >= self.order {
-                        // flawed, probably loses the ends of every buffer
-                        // also totally fails to deal with utf-8
-                        let slice = buf.slice(0, self.order);
-                        match str::from_utf8(slice) {
-                            Some(s) => self.inc_word_count(s),
-                            None => { println!("WARNING: got some broken utf-8: {}", slice); }
-                        };
+            match srcreader.read_char() {
+                Ok(c) => {
+                    acc.push_char(c);
+                    if acc.len() >= self.order {
+                        self.inc_sequence_frequency(acc.as_slice());
+                        acc.shift_char();
                     }
                 }
                 Err(_) => {
                     break;
                 }
             }
-            srcreader.consume(1);
         }
     }
 
@@ -163,7 +158,7 @@ impl MarkovModel {
                 None => fail!("couldn't generate a char somehow!")
             }
         } else {
-            let sub = self.submodel(prior.slice(1, prior.len()));
+            let sub = self.submodel(prior.slice_chars(1, prior.char_len()));
             if sub.is_empty() {
                 // println!("empty submode for {}, cheaping out with shorter key '{}'", 
                 //          prior, 
@@ -171,7 +166,7 @@ impl MarkovModel {
 
                 // it's probably too late, as this state is an attractor.
                 // try to salvage anyways.  recurse with less context.
-                return self.generate_next_char(prior.slice(1, prior.len()));
+                return self.generate_next_char(prior.slice_chars(1, prior.char_len()));
             }
 
             // println!("got submodel: {}", sub);
