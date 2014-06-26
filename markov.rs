@@ -4,15 +4,15 @@ extern crate time;
 // use std::str;
 // use std::rand;
 use std::io::{File, BufferedReader};
-use std::collections::HashMap;
+use std::collections::TreeMap;
 use serialize::{json, Encodable, Decodable};
 
-#[deriving(Decodable, Encodable, Show, Eq, PartialEq)]
+#[deriving(Decodable, Encodable, Show)]
 pub struct MarkovModel {
     // nth order markov model has an n-piece 'state'
     order: uint,
     // a histogram of frequencies of sequences of length `order`
-    frequencies: HashMap<String, uint>,
+    frequencies: TreeMap<String, uint>,
     // an optimization so we're not constantly re-counting
     total_occurences: uint
 }
@@ -21,7 +21,7 @@ impl MarkovModel {
     pub fn new(order: uint) -> MarkovModel {
         MarkovModel {
             order: order,
-            frequencies: HashMap::new(),
+            frequencies: TreeMap::new(),
             total_occurences: 0
         }
     }
@@ -64,7 +64,8 @@ impl MarkovModel {
         // return Decodable::decode(&mut decoder).unwrap();
         let mm: MarkovModel = try!(Decodable::decode(&mut decoder));
 
-        assert!(mm.total_occurences == mm.frequencies.values().fold(0, |a, &b| a + b));
+        // why no .values() for TreeMap?
+        // assert!(mm.total_occurences == mm.frequencies.values().fold(0, |a, &b| a + b));
         Ok(mm)
     }
 
@@ -82,12 +83,18 @@ impl MarkovModel {
     }
 
     fn inc_sequence_frequency(&mut self, key: &str) {
-        self.frequencies.insert_or_update_with(
-            key.to_string(),
-            1,
-            |_, v| {
-                *v += 1;
-            });
+        // why doesn't this exist for treemap?
+        // self.frequencies.insert_or_update_with(
+        //     key.to_string(),
+        //     1,
+        //     |_, v| {
+        //         *v += 1;
+        //     });
+        let old_freq = match self.frequencies.find(&key.to_string()) {
+            Some(v) => *v,
+            None => 0u
+        };
+        self.frequencies.insert(key.to_string(), old_freq + 1);
         self.total_occurences += 1;
     }
 
@@ -194,13 +201,15 @@ impl MarkovModel {
         // seems like we frequently produce empty submodels...
         let mut mm = MarkovModel::new(self.order);
         
-        for (k, v) in self.frequencies.iter() {
+        for (k, v) in self.frequencies.lower_bound(&prefix.to_string()) {
             let kslice = k.as_slice();
             if kslice.starts_with(prefix) {
                 mm.set_frequency(kslice, *v);
+            } else {
+                break;
             }
         }
-        // seems like it takes about 1 second to build a submodel for a 2.5 million entry model
+        // seems like it takes about 1 second to build a submodel for a 2.5 million entry model with hashmap
         // maybe i can switch to a TreeMap and use lower_bound() to speed this up
         // println!("submodel for '{}' of size {} (full {}) built in {} secs.", 
         //          prefix, 
