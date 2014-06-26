@@ -13,13 +13,16 @@ pub struct MarkovModel {
     order: uint,
     // a histogram of frequencies of sequences of length `order`
     frequencies: HashMap<String, uint>,
+    // an optimization so we're not constantly re-counting
+    total_occurences: uint
 }
 
 impl MarkovModel {
     pub fn new(order: uint) -> MarkovModel {
         MarkovModel {
             order: order,
-            frequencies: HashMap::new()
+            frequencies: HashMap::new(),
+            total_occurences: 0
         }
     }
 
@@ -51,10 +54,10 @@ impl MarkovModel {
         let json_object = json::from_str(s.as_slice());
         let mut decoder = json::Decoder::new(json_object.unwrap());
 
-        return Decodable::decode(&mut decoder).unwrap();
-        // let mm = Decodable::decode(&mut decoder).unwrap();
-        // mm.total_occurences = mm.frequencies.values().fold(0, |a, &b| a + b);
-        // return mm;
+        // return Decodable::decode(&mut decoder).unwrap();
+        let mut mm: MarkovModel = Decodable::decode(&mut decoder).unwrap();
+        mm.total_occurences = mm.frequencies.values().fold(0, |a, &b| a + b);
+        return mm;
     }
 
     pub fn save(&self, filename: &str) {
@@ -78,15 +81,19 @@ impl MarkovModel {
             |_, v| {
                 *v += 1;
             });
-        // self.total_occurences += 1;
+        self.total_occurences += 1;
     }
 
     pub fn set_frequency(&mut self, key: &str, freq: uint) {
-        let old_freq = self.frequencies.find_or_insert(key.to_string(), freq);
-        // self.total_occurences -= *old_freq;
-        *old_freq = freq;
-        // self.total_occurences += freq;
-        // assert!(self.total_occurences > 0);
+        match self.frequencies.find(&key.to_string()) {
+            Some(old_freq) =>  {
+                self.total_occurences -= *old_freq;
+            }
+            None => {}
+        };
+        self.frequencies.insert(key.to_string(), freq);
+        self.total_occurences += freq;
+        assert!(self.total_occurences > 0);
     }
 
     pub fn train(&mut self, filename: &str) {
@@ -125,14 +132,13 @@ impl MarkovModel {
     pub fn generate_str<'a>(&'a self) -> &'a str {
         // ultra inefficient!
         // could just track this as we build the structure
-        let total_count: uint = self.frequencies.values().fold(0, |a, &b| a + b);
+        // let total_count: uint = self.frequencies.values().fold(0, |a, &b| a + b);
 
-
-        if total_count == 0 {
+        if self.total_occurences == 0 {
             fail!("empty markov model! {}", self);
         }
 
-        let n: uint = std::rand::random::<uint>() % total_count;
+        let n: uint = std::rand::random::<uint>() % self.total_occurences;
         let mut low: uint = 0;
         let mut high: uint = 0;
 
@@ -203,7 +209,10 @@ fn train_to_new_file(order: uint, dbfilename: &str, srcfilename: &str) {
 }
 
 fn generate_from_db(dbfilename: &str) {
+    print!("loading db...");
+    std::io::stdio::flush();
     let mm = MarkovModel::load(dbfilename);
+    println!("loaded.");
 
     // produce an infinite stream of results
     let mut prior: String = mm.generate_str().to_string();
