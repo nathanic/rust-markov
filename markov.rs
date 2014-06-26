@@ -1,5 +1,5 @@
 extern crate serialize;
-// extern crate time;
+extern crate time;
 
 // use std::str;
 // use std::rand;
@@ -33,15 +33,22 @@ impl MarkovModel {
     // for appending to model files, training on a multi-file corpus
     pub fn load_or_create(filename: &str, order: uint) -> MarkovModel {
         if Path::new(filename).exists() {
-            let mm = MarkovModel::load(filename);
-            assert!(mm.order == order);
-            mm
+            match MarkovModel::load(filename) {
+                Ok(mm) => {
+                    assert!(mm.order == order);
+                    mm
+                }
+                Err(why) => {
+                    // a little safety so i don't keep accidentally overwriting my book files
+                    fail!("failed to load markov model from {}: {}", filename, why);
+                }
+            }
         } else {
             MarkovModel::new(order)
         }
     }
 
-    pub fn load(filename: &str) -> MarkovModel {
+    pub fn load(filename: &str) -> Result<MarkovModel, json::DecoderError> {
         let mut f = match File::open(&Path::new(filename)) {
             Ok(f) => f,
             Err(why) => fail!("couldn't open file: {}", why)
@@ -55,9 +62,10 @@ impl MarkovModel {
         let mut decoder = json::Decoder::new(json_object.unwrap());
 
         // return Decodable::decode(&mut decoder).unwrap();
-        let mut mm: MarkovModel = Decodable::decode(&mut decoder).unwrap();
-        mm.total_occurences = mm.frequencies.values().fold(0, |a, &b| a + b);
-        return mm;
+        let mm: MarkovModel = try!(Decodable::decode(&mut decoder));
+
+        assert!(mm.total_occurences == mm.frequencies.values().fold(0, |a, &b| a + b));
+        Ok(mm)
     }
 
     pub fn save(&self, filename: &str) {
@@ -182,6 +190,7 @@ impl MarkovModel {
     /** Produce a subset of the model for values with the given prefix.
      */
     fn submodel(&self, prefix: &str) -> MarkovModel {
+        // let t_before = time::precise_time_s();
         // seems like we frequently produce empty submodels...
         let mut mm = MarkovModel::new(self.order);
         
@@ -191,23 +200,33 @@ impl MarkovModel {
                 mm.set_frequency(kslice, *v);
             }
         }
-        // println!("submodel for prefix '{}': {}", prefix, mm);
+        // seems like it takes about 1 second to build a submodel for a 2.5 million entry model
+        // maybe i can switch to a TreeMap and use lower_bound() to speed this up
+        // println!("submodel for '{}' of size {} (full {}) built in {} secs.", 
+        //          prefix, 
+        //          mm.frequencies.len(), 
+        //          self.frequencies.len(), 
+        //          time::precise_time_s() - t_before);
         return mm;
     }
 
 }
 
-fn train_to_new_file(order: uint, dbfilename: &str, srcfilename: &str) {
-    let mut mm = MarkovModel::new(order);
+fn train_to_file(order: uint, dbfilename: &str, srcfilename: &str) {
+    let mut mm = MarkovModel::load_or_create(dbfilename, order);
     mm.train(srcfilename);
     mm.save(dbfilename);
 }
 
 fn generate_from_db(dbfilename: &str) {
     print!("loading db...");
+    let t_before = time::precise_time_s();
     std::io::stdio::flush();
-    let mm = MarkovModel::load(dbfilename);
-    println!("loaded.");
+    let mm = match MarkovModel::load(dbfilename) {
+        Ok(mm) => mm,
+        Err(why) => fail!("couldn't decode MarkovModel: {}", why)
+    };
+    println!("loaded in {} secs.", time::precise_time_s() - t_before);
 
     // produce an infinite stream of results
     let mut prior: String = mm.generate_str().to_string();
@@ -236,9 +255,9 @@ fn main() {
                 Some(n) => n,
                 None => fail!("order must be an integer. you gave '{}'", args.get(2))
             };
-            train_to_new_file(order, 
-                              args.get(3).as_slice(), 
-                              args.get(4).as_slice());
+            train_to_file(order, 
+                          args.get(3).as_slice(), 
+                          args.get(4).as_slice());
         }
         // markov generate dbfile
         "generate" => {
