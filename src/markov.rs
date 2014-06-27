@@ -217,9 +217,22 @@ impl MarkovModel {
 }
 
 fn train_to_file(order: uint, dbfilename: &str, srcfilename: &str) {
+    let t_before = time::precise_time_s();
+    if Path::new(dbfilename).exists() {
+        if dbfilename.ends_with(".txt") {
+            // wiped out my training files a little too often ;-)
+            println!("whoops, that would overwrite '{}'!", dbfilename);
+            return;
+        }
+        println!("loading existing model file '{}'", dbfilename);
+    }
     let mut mm = MarkovModel::load_or_create(dbfilename, order);
+    println!("training from file '{}'", srcfilename);
     mm.train(srcfilename);
+
+    println!("writing model file '{}'", dbfilename);
     mm.save(dbfilename);
+    println!("done in {} sec!", time::precise_time_s() - t_before);
 }
 
 fn generate_from_db(dbfilename: &str) {
