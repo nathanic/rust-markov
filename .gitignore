@@ -5,4 +5,4 @@ triemap
 *.txt
 target/
 *.db
-alles16.output deepness16.output
+*.output
