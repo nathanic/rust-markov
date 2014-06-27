@@ -8,3 +8,9 @@ authors = [ "nathanism@gmail.com" ]
 
 name = "markov" # the name of the executable to generate
 
+[dependencies.msgpack]
+
+# personal fork of msgpack that 1. has a cargo file and 2. compiles with rustc nightly
+git = "https://github.com/nathanic/rust-msgpack.git"
+
+# vi: ft=conf

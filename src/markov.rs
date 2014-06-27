@@ -1,3 +1,4 @@
+extern crate msgpack = "msgpack#0.1";
 extern crate serialize;
 extern crate time;
 
@@ -7,7 +8,9 @@ extern crate time;
 // use std::rand;
 use std::io::{File, BufferedReader};
 use std::collections::TreeMap;
-use serialize::{json, Encodable, Decodable};
+use serialize::json;
+
+use serialize::{Encodable, Decodable};
 
 #[deriving(Decodable, Encodable, Show)]
 pub struct MarkovModel {
@@ -55,16 +58,29 @@ impl MarkovModel {
             Ok(f) => f,
             Err(why) => fail!("couldn't open file: {}", why)
         };
-        let s = match f.read_to_str() {
-            Ok(s) => s,
-            Err(why) => fail!("couldn't read file: {}", why)
-        };
-
-        let json_object = json::from_str(s.as_slice());
-        let mut decoder = json::Decoder::new(json_object.unwrap());
+        // let s = match f.read_to_str() {
+        //     Ok(s) => s,
+        //     Err(why) => fail!("couldn't read file: {}", why)
+        // };
+        //
+        // let json_object = json::from_str(s.as_slice());
+        // let mut decoder = json::Decoder::new(json_object.unwrap());
 
         // return Decodable::decode(&mut decoder).unwrap();
-        let mm: MarkovModel = try!(Decodable::decode(&mut decoder));
+        // let mm: MarkovModel = try!(Decodable::decode(&mut decoder));
+
+        // lol so unsafe
+        let buf = match f.read_to_end() {
+            Ok(b) => b,
+            Err(why) => fail!("couldn't read model file: {}", why)
+        };
+
+        let mm: MarkovModel = match msgpack::from_msgpack(buf) {
+            // Ok(Some(mm)) => mm,
+            // Ok(None) => fail!("Ok(None) ??"),
+            Ok(mm) => mm,
+            Err(why) => fail!("couldn't parse model file: {}", why)
+        };
 
         // why no .values() for TreeMap?
         // assert!(mm.total_occurences == mm.frequencies.values().fold(0, |a, &b| a + b));
@@ -78,7 +94,8 @@ impl MarkovModel {
         };
 
         // TODO: pretty json
-        match f.write(json::Encoder::str_encode(self).as_bytes()) {
+        // match f.write(json::Encoder::str_encode(self).as_bytes()) {
+        match f.write(msgpack::to_msgpack(self).ok().unwrap().as_slice()) {
             Err(why) => fail!("couldn't write to file: {}", why),
             _ => ()
         };
@@ -218,6 +235,7 @@ impl MarkovModel {
 
 fn train_to_file(order: uint, dbfilename: &str, srcfilename: &str) {
     let t_before = time::precise_time_s();
+    let mut loading = false;
     if Path::new(dbfilename).exists() {
         if dbfilename.ends_with(".txt") {
             // wiped out my training files a little too often ;-)
@@ -225,25 +243,42 @@ fn train_to_file(order: uint, dbfilename: &str, srcfilename: &str) {
             return;
         }
         println!("loading existing model file '{}'", dbfilename);
+        loading = true;
     }
+
+    let t_this = time::precise_time_s();
     let mut mm = MarkovModel::load_or_create(dbfilename, order);
+    if loading {
+        println!("loaded in {} sec.", time::precise_time_s() - t_this);
+    }
+
     println!("training from file '{}'", srcfilename);
+    let t_this = time::precise_time_s();
     mm.train(srcfilename);
+    println!("trained model in {} sec.", time::precise_time_s() - t_this);
 
     println!("writing model file '{}'", dbfilename);
+    let t_this = time::precise_time_s();
     mm.save(dbfilename);
-    println!("done in {} sec!", time::precise_time_s() - t_before);
+    println!("wrote model ({} entries, {} occurences) in {} sec.", 
+             mm.frequencies.len(), 
+             mm.total_occurences,
+             time::precise_time_s() - t_this);
+    println!("done in {} sec overall!", time::precise_time_s() - t_before);
 }
 
 fn generate_from_db(dbfilename: &str) {
-    print!("loading db...");
+    print!("loading model...");
     let t_before = time::precise_time_s();
     std::io::stdio::flush();
     let mm = match MarkovModel::load(dbfilename) {
         Ok(mm) => mm,
         Err(why) => fail!("couldn't decode MarkovModel: {}", why)
     };
-    println!("loaded in {} secs.", time::precise_time_s() - t_before);
+    println!("model ({} entries, {} occurences) loaded in {} secs.", 
+             mm.frequencies.len(), 
+             mm.total_occurences,
+             time::precise_time_s() - t_before);
 
     // produce an infinite stream of results
     let mut prior: String = mm.generate_str().to_string();
