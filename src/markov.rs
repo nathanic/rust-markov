@@ -1,6 +1,8 @@
 extern crate serialize;
 extern crate time;
 
+// TODO: build models from chat logs!
+
 // use std::str;
 // use std::rand;
 use std::io::{File, BufferedReader};
@@ -140,10 +142,6 @@ impl MarkovModel {
 
     // choose a weighted random string out of the model, of length `self.order`
     pub fn generate_str<'a>(&'a self) -> &'a str {
-        // ultra inefficient!
-        // could just track this as we build the structure
-        // let total_count: uint = self.frequencies.values().fold(0, |a, &b| a + b);
-
         if self.total_occurences == 0 {
             fail!("empty markov model! {}", self);
         }
@@ -184,7 +182,6 @@ impl MarkovModel {
                 return self.generate_next_char(prior.slice_chars(1, prior.char_len()));
             }
 
-            // println!("got submodel: {}", sub);
             match sub.generate_str().chars().last() {
                 Some(c) => c,
                 None => fail!("couldn't generate char from submodel!")
@@ -209,8 +206,6 @@ impl MarkovModel {
                 break;
             }
         }
-        // seems like it takes about 1 second to build a submodel for a 2.5 million entry model with hashmap
-        // maybe i can switch to a TreeMap and use lower_bound() to speed this up
         // println!("submodel for '{}' of size {} (full {}) built in {} secs.", 
         //          prefix, 
         //          mm.frequencies.len(), 

@@ -1,0 +1,10 @@
+[package]
+
+name = "markov"
+version = "0.1.0"
+authors = [ "nathanism@gmail.com" ]
+
+[[bin]]
+
+name = "markov" # the name of the executable to generate
+

@@ -3,3 +3,4 @@ markov
 triemap
 *.json
 *.txt
+target/
